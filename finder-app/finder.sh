@@ -19,7 +19,7 @@ if [[ -d $filesdir ]]; then
 	match_lines=$(grep -R $searchstr $filesdir | wc -l)
 	numb_files=$(find $filesdir -type f | wc -l)
 	
-	echo "The number of files are $numb_files and the number of matching lines are $match_lines"
+	#echo "The number of files are $numb_files and the number of matching lines are $match_lines" | tee -a /tmp/assignment4-result.txt
 	
 
 else

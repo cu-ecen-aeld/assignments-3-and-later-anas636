@@ -118,13 +118,19 @@ int main (int argc, char *argv[])
         exit(1);    
     }
 
+    const int enable = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+    {
+        exit(1);
+    }
+        
     //printf("socket created with sucesss\n");
     
 
     int res1 = bind(fd, servinfo->ai_addr, servinfo->ai_addrlen);
 
     if (res1 == -1){
-        //printf("Error in bind, errno is %d (%s)\n",errno,strerror(errno));
+        printf("Error in bind, errno is %d (%s)\n",errno,strerror(errno));
         exit(1); 
     }
 
@@ -242,7 +248,7 @@ int main (int argc, char *argv[])
 
         while((byread = read(fd_f1, buf, BUF_SIZE))>0){
 
-            printf("\n sendinf: %s \n", buf);
+            //printf("\n sendinf: %s \n", buf);
 
             ssize_t bysent = send(clientsocket, buf, byread, 0);
 

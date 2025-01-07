@@ -1,12 +1,16 @@
 
 
+CC=$(CROSS_COMPILE)gcc
+CCFLAGS=-g -Wall -Wextra
+
+
 .PHONY: all
 all: aesdsocket
 
-writer: writer.o
-	$(CC) $(LDFLAGS) -o aesdsocket aesdsocket.o
+aesdsocket: aesdsocket.o
+	$(CC) -o aesdsocket aesdsocket.o
 
-writer.o: writer.c
+aesdsocket.o: aesdsocket.c
 	$(CC) $(CCFLAGS) -o aesdsocket.o -c aesdsocket.c
 	
 .PHONY: clean

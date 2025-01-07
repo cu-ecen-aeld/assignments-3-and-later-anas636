@@ -12,32 +12,58 @@
 #include <syslog.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <pthread.h>
+#include <time.h>
 
 #define LISTEN_BACKLOG 50
-#define BUF_SIZE 500
+#define MAX_THREAD 50
+#define BUF_SIZE 512
 
 bool caught_signal = false;
+int it = 1;
+pthread_t thread_id[MAX_THREAD];
+int counter=0;
+pthread_mutex_t lock;
+
+struct args {
+
+    int clientsocket; 
+    char* ip;
+};
 
 int become_daemon ()
-{
-     switch(fork())                    
+{   
+    int x = fork();
+    switch(x)                    
   {
-    case -1: return -1;
-    case 0: break;                  
-    default: _exit(EXIT_SUCCESS);
+    case -1:
+        //sleep(50); 
+        return -1;
+    case 0: 
+        //sleep(50); 
+        break;                  
+    default:
+        //sleep(50); 
+        _exit(EXIT_SUCCESS);
   }
 
   if(setsid() == -1)
   {               
     return -1;
   }
-
-   switch(fork())
-  {
-    case -1: return -1;
-    case 0: break;                  
-    default: _exit(EXIT_SUCCESS);
-  }
+    int y = fork();
+    switch(y)
+    {
+    case -1:
+        //sleep(50);
+        return -1;
+    case 0: 
+        //sleep(50);
+        break;                  
+    default:
+        //sleep(50); 
+        _exit(EXIT_SUCCESS);
+    }
 
   return 0;
 
@@ -48,7 +74,128 @@ static void signal_handler(int signal_number){
 
     caught_signal = true;
 
+}
 
+void timer_funct(union sigval timer_data)
+{
+    char outstr[200];
+    time_t t = time(NULL);
+    struct tm *tmp;
+    tmp = localtime(&t);
+    size_t len = strftime(outstr, sizeof(outstr),"timestamp:%F %T \n",tmp);
+    
+    const char *filename = "/var/tmp/aesdsocketdata";
+
+    pthread_mutex_lock(&lock);
+    int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
+    if (fd_f<0){
+        pthread_exit((void *)1);	
+    }
+
+    ssize_t n_wr = write(fd_f, outstr, len);
+    close(fd_f);
+    pthread_mutex_unlock(&lock);
+    if (n_wr < 0){
+        close(fd_f);
+        pthread_mutex_unlock(&lock);
+        pthread_exit((void *)1);	
+    }
+
+}
+
+
+
+void thread_funct_cleanUp (struct args* thread_func_args) {
+
+    close(thread_func_args->clientsocket);
+    free(thread_func_args->ip);
+    thread_func_args->ip = NULL;
+    free(thread_func_args);
+    thread_func_args = NULL;
+    
+
+}
+
+
+
+void* thread_function(void* arguments)
+{
+
+    struct args* thread_func_args = (struct args*) arguments;
+    const char *filename = "/var/tmp/aesdsocketdata";
+    char buf[BUF_SIZE];
+    memset(buf, 0, BUF_SIZE); //clear the variable
+    ssize_t nread;
+    ssize_t byread;
+
+    //printf("Connection done with client IP address: %s number: %d \n", thread_func_args->ip, it);
+    it++;
+
+    while((nread = recv(thread_func_args->clientsocket, buf, BUF_SIZE, 0))>0){
+
+        pthread_mutex_lock(&lock);
+        int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
+        if (fd_f<0){
+            pthread_mutex_unlock(&lock);
+            thread_funct_cleanUp(thread_func_args);
+            pthread_exit((void *)1);	
+        }
+
+        ssize_t n_wr = write(fd_f, buf, nread);
+        close(fd_f);
+        pthread_mutex_unlock(&lock);
+        
+        if (n_wr != nread){
+            thread_funct_cleanUp(thread_func_args);
+            pthread_exit((void *)1);	
+        }
+
+        if(buf[nread-1]=='\n')
+        {
+            break;
+        }
+
+        memset(buf, 0, BUF_SIZE); //clear the variable
+
+    }
+
+    if(nread < 0){
+        thread_funct_cleanUp(thread_func_args);
+        pthread_exit((void *)1);
+    }
+
+    //send to client
+    
+    int fd_f1 = open(filename, O_RDONLY);
+
+    if (fd_f1<1){
+            thread_funct_cleanUp(thread_func_args);
+            pthread_exit((void *)1);	
+        }
+
+
+    while((byread = read(fd_f1, buf, BUF_SIZE))>0){
+
+        //printf("\n sendinf: %s \n", buf);
+
+        ssize_t bysent = send(thread_func_args->clientsocket, buf, byread, 0);
+
+        if (bysent != byread){
+            close(fd_f1);
+            thread_funct_cleanUp(thread_func_args);
+            pthread_exit((void *)1);	
+        }
+
+    
+        memset(buf, 0, BUF_SIZE); //clear the variable
+    }
+
+    close(fd_f1);
+    syslog(LOG_DEBUG,"Closed connection from %s \n", thread_func_args->ip);
+    thread_funct_cleanUp(thread_func_args);
+   
+    return NULL;
+    
 }
 
 
@@ -60,14 +207,13 @@ int main (int argc, char *argv[])
     struct addrinfo *servinfo;
     struct sockaddr client_addr;
     socklen_t client_addr_size;
-    char buf[BUF_SIZE];
+    //char buf[BUF_SIZE];
     char *ip;
-    int total_size=0;
     int fd;
     int clientsocket;
-    ssize_t byread;
+    //ssize_t byread;
     struct sigaction action;
-    const char *filename = "/var/tmp/aesdsocketdata";
+    char *filename = "/var/tmp/aesdsocketdata";
     memset(&action, 0, sizeof(action));
     action.sa_handler = signal_handler;
     if(sigaction(SIGTERM, &action, NULL) !=0 ){
@@ -89,7 +235,28 @@ int main (int argc, char *argv[])
                 break;
         }
     }
+
+    //initialise mutex
+    if (pthread_mutex_init(&lock, NULL) != 0)
+            exit(1);
     
+    //timer
+    int clock_id = CLOCK_MONOTONIC;
+    timer_t timerId = 0;
+    struct sigevent sev = {0};
+    
+    
+    sev.sigev_notify = SIGEV_THREAD;
+    sev.sigev_notify_function = &timer_funct;
+    //sev.sigev_notify.sival_ptr = 
+
+   
+    struct itimerspec its = {   .it_value.tv_sec = 10,
+                                .it_value.tv_nsec = 0,
+                                .it_interval.tv_sec = 10,
+                                .it_interval.tv_nsec = 0,
+
+    };
 
     openlog(NULL,0,LOG_USER);
     memset(&hints, 0, sizeof(hints));   
@@ -102,7 +269,6 @@ int main (int argc, char *argv[])
 
 
     if (res != 0){
-
         //printf("error with geraddrinfo\n");
         exit(1);
     }
@@ -112,7 +278,6 @@ int main (int argc, char *argv[])
 
 
     if (fd == -1){
-
         //printf("error creating the socket");
         //printf("Error creating the socket, errno is %d (%s)\n",errno,strerror(errno));
         exit(1);    
@@ -146,6 +311,18 @@ int main (int argc, char *argv[])
         }
     } 
 
+     //create timer
+    int res_ = timer_create(clock_id, &sev, &timerId);
+    if (res_ != 0)
+        exit(1);
+
+    // start timer
+    res_ = timer_settime(timerId,0,&its, NULL);
+    if (res_ != 0)
+    {
+        //syslog(LOG_DEBUG, "ailure with %s    Erno : %d \n", strerror(errno), errno); 
+        exit(1);
+    }
 
     int res2 = listen(fd, LISTEN_BACKLOG);
 
@@ -160,13 +337,16 @@ int main (int argc, char *argv[])
         if (caught_signal == true){
             syslog(LOG_DEBUG,"Caught signal, exiting \n");
 
-            if (remove(filename) == 0) {
+            if (access(filename, F_OK) == 0) {
+                // file exists
+                if (remove(filename) == 0) {
                 //printf("File %s successfully deleted.\n", filename);
-            } else {
+                } else {
                 //perror("Error deleting file");
-                exit(1);
+                    exit(1);
+                }
             }
-
+            
             break;
         }
 
@@ -175,12 +355,16 @@ int main (int argc, char *argv[])
 
         if (caught_signal == true){
             syslog(LOG_DEBUG,"Caught signal, exiting \n");
-            if (remove(filename) == 0) {
+            if (access(filename, F_OK) == 0) {
+                // file exists
+                if (remove(filename) == 0) {
                 //printf("File %s successfully deleted.\n", filename);
-            } else {
+                } else {
                 //perror("Error deleting file");
-                exit(1);
+                    exit(1);
+                }
             }
+            
             break;
         }
 
@@ -198,79 +382,40 @@ int main (int argc, char *argv[])
         }
 
 
-        memset(buf, 0, BUF_SIZE); //clear the variable
-        ssize_t nread;
+        // add the thread function here 
+        /*struct args arguments;
+        */
+        struct args *arguments = malloc(sizeof *arguments);
+        if (arguments == NULL)
+            exit(1);
+        arguments->clientsocket = clientsocket;
+        //arguments->ip = ip;
+        arguments->ip = malloc(strlen(ip)+1);
+        if (arguments->ip ==NULL)
+            exit(1);
+        strcpy(arguments->ip, ip);
 
-        //printf("we are here\n");
 
-        while((nread = recv(clientsocket, buf, BUF_SIZE, 0))>0){
-
-
-            int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
-            if (fd_f<0){
-                //printf("error in open(use erno)");
-                exit(1);	
-            }
-
-
-            //printf("\n The message received is %s \n", buf);
-            ssize_t n_wr = write(fd_f, buf, nread);
-            close(fd_f);
-
-            if (n_wr != nread){
-                //printf("error in write(use erno)");
-                exit(1);	
-            }
-
-            if(buf[nread-1]=='\n')
-            {
-                break;
-            }
-
-            memset(buf, 0, BUF_SIZE); //clear the variable
-
-        }
-
-        if(nread < 0){
-            //printf("Error in recv");
+        int rc = pthread_create(&(thread_id[counter]), NULL, thread_function, arguments);
+    
+        if (rc != 0){
             exit(1);
         }
 
-        //send to client
-        
-        int fd_f1 = open(filename, O_RDONLY);
+        counter++;
+        if (counter+1 >= MAX_THREAD)
+            exit(1);
+   
+    } 
 
-        if (fd_f1<1){
-                //printf("error in open(use erno)");
-                exit(1);	
-            }
-
-
-        while((byread = read(fd_f1, buf, BUF_SIZE))>0){
-
-            //printf("\n sendinf: %s \n", buf);
-
-            ssize_t bysent = send(clientsocket, buf, byread, 0);
-
-            if (bysent != byread){
-                //printf("error in send(use erno)");
-                exit(1);	
-            }
-
-            //printf("\n sendinf: %s \n", buf);
-
-            memset(buf, 0, BUF_SIZE); //clear the variable
-        }
-
-        close(fd_f1);
-        close(clientsocket);
-        syslog(LOG_DEBUG,"Closed connection from %s \n", ip);
-  
+    for(int i=0; i<=counter; i++){
+        pthread_join(thread_id[i], NULL);
     }
-
+    pthread_mutex_destroy(&lock);
     close(fd);
+    timer_delete(timerId);
     closelog();
-
+    
     return 0;
 
 }

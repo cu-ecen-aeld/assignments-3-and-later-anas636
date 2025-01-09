@@ -14,22 +14,35 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <time.h>
+#include<sys/queue.h>
 
 #define LISTEN_BACKLOG 50
 #define MAX_THREAD 50
 #define BUF_SIZE 512
 
+//Global Varibles
 bool caught_signal = false;
+char *filename = "/var/tmp/aesdsocketdata";
 int it = 1;
-pthread_t thread_id[MAX_THREAD];
-int counter=0;
+//pthread_t thread_id[MAX_THREAD];
+//int counter=0;
 pthread_mutex_t lock;
 
-struct args {
+/*struct args {
 
     int clientsocket; 
     char* ip;
+};*/
+
+struct slist_data_s {
+    int clientsocket; 
+    char* ip;
+    int thread_flag;
+    pthread_t thread_id;
+    SLIST_ENTRY(slist_data_s) entries;
 };
+typedef struct slist_data_s slist_data_t;
+
 
 int become_daemon ()
 {   
@@ -105,7 +118,7 @@ void timer_funct(union sigval timer_data)
 
 
 
-void thread_funct_cleanUp (struct args* thread_func_args) {
+/*void thread_funct_cleanUp (struct args* thread_func_args) {
 
     close(thread_func_args->clientsocket);
     free(thread_func_args->ip);
@@ -114,19 +127,20 @@ void thread_funct_cleanUp (struct args* thread_func_args) {
     thread_func_args = NULL;
     
 
-}
+}*/
 
 
 
 void* thread_function(void* arguments)
 {
 
-    struct args* thread_func_args = (struct args*) arguments;
-    const char *filename = "/var/tmp/aesdsocketdata";
+    slist_data_t* thread_func_args = (slist_data_t*) arguments;
+    //const char *filename = "/var/tmp/aesdsocketdata";
     char buf[BUF_SIZE];
     memset(buf, 0, BUF_SIZE); //clear the variable
     ssize_t nread;
     ssize_t byread;
+
 
     //printf("Connection done with client IP address: %s number: %d \n", thread_func_args->ip, it);
     it++;
@@ -135,9 +149,12 @@ void* thread_function(void* arguments)
 
         pthread_mutex_lock(&lock);
         int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
+        //printf("\n rcv: %s \n", buf);
+
         if (fd_f<0){
             pthread_mutex_unlock(&lock);
-            thread_funct_cleanUp(thread_func_args);
+            //thread_funct_cleanUp(thread_func_args);
+            thread_func_args->thread_flag = 1;
             pthread_exit((void *)1);	
         }
 
@@ -146,7 +163,8 @@ void* thread_function(void* arguments)
         pthread_mutex_unlock(&lock);
         
         if (n_wr != nread){
-            thread_funct_cleanUp(thread_func_args);
+            //thread_funct_cleanUp(thread_func_args);
+            thread_func_args->thread_flag = 1;
             pthread_exit((void *)1);	
         }
 
@@ -160,7 +178,8 @@ void* thread_function(void* arguments)
     }
 
     if(nread < 0){
-        thread_funct_cleanUp(thread_func_args);
+        //thread_funct_cleanUp(thread_func_args);
+        thread_func_args->thread_flag = 1;
         pthread_exit((void *)1);
     }
 
@@ -169,7 +188,8 @@ void* thread_function(void* arguments)
     int fd_f1 = open(filename, O_RDONLY);
 
     if (fd_f1<1){
-            thread_funct_cleanUp(thread_func_args);
+            //thread_funct_cleanUp(thread_func_args);
+            thread_func_args->thread_flag = 1;
             pthread_exit((void *)1);	
         }
 
@@ -182,7 +202,8 @@ void* thread_function(void* arguments)
 
         if (bysent != byread){
             close(fd_f1);
-            thread_funct_cleanUp(thread_func_args);
+            //thread_funct_cleanUp(thread_func_args);
+            thread_func_args->thread_flag = 1;
             pthread_exit((void *)1);	
         }
 
@@ -192,7 +213,8 @@ void* thread_function(void* arguments)
 
     close(fd_f1);
     syslog(LOG_DEBUG,"Closed connection from %s \n", thread_func_args->ip);
-    thread_funct_cleanUp(thread_func_args);
+    thread_func_args->thread_flag = 1;
+    //thread_funct_cleanUp(thread_func_args);
    
     return NULL;
     
@@ -213,7 +235,7 @@ int main (int argc, char *argv[])
     int clientsocket;
     //ssize_t byread;
     struct sigaction action;
-    char *filename = "/var/tmp/aesdsocketdata";
+    //char *filename = "/var/tmp/aesdsocketdata";
     memset(&action, 0, sizeof(action));
     action.sa_handler = signal_handler;
     if(sigaction(SIGTERM, &action, NULL) !=0 ){
@@ -331,6 +353,9 @@ int main (int argc, char *argv[])
         exit(1);
     }
 
+    //SLIST initialization
+    SLIST_HEAD(slisthead, slist_data_s) head;
+    SLIST_INIT(&head);
 
     for( ; ; ) {
 
@@ -382,35 +407,61 @@ int main (int argc, char *argv[])
         }
 
 
-        // add the thread function here 
-        /*struct args arguments;
+        // running the thread function here 
+        /*
+        Use of SLIST linked list
         */
-        struct args *arguments = malloc(sizeof *arguments);
-        if (arguments == NULL)
+  
+        SLIST_HEAD(slisthead, slist_data_s) head;
+        SLIST_INIT(&head);
+        slist_data_t *datap=NULL;
+        slist_data_t *datap_temp=NULL;
+
+        datap = malloc(sizeof(slist_data_t));
+        if (datap == NULL)
             exit(1);
-        arguments->clientsocket = clientsocket;
-        //arguments->ip = ip;
-        arguments->ip = malloc(strlen(ip)+1);
-        if (arguments->ip ==NULL)
+        
+        datap->ip = malloc(strlen(ip)+1);
+        if (datap->ip ==NULL)
             exit(1);
-        strcpy(arguments->ip, ip);
+        strcpy(datap->ip, ip);
+        datap->thread_flag = 0;
+        datap->clientsocket = clientsocket;
+
+        SLIST_INSERT_HEAD(&head, datap, entries);
 
 
-        int rc = pthread_create(&(thread_id[counter]), NULL, thread_function, arguments);
-    
+        int rc = pthread_create(&(datap->thread_id), NULL, thread_function, datap);
+        //printf("thread ID %ld\n", datap->thread_id);
+        //printf("Error creating the thread, errno is %d (%s)\n",errno,strerror(errno));
+
         if (rc != 0){
             exit(1);
         }
 
-        counter++;
+        /*counter++;
         if (counter+1 >= MAX_THREAD)
-            exit(1);
+            exit(1);*/
+        
+        SLIST_FOREACH_SAFE(datap, &head, entries, datap_temp) {
+            //printf("thread ID %ld\n", datap->thread_id);
+            if (datap->thread_flag == 1) {
+                pthread_join(datap->thread_id, NULL);
+                SLIST_REMOVE(&head, datap, slist_data_s, entries);
+                free(datap->ip);
+                free(datap);
+            }
+            //printf("Read1: %d\n", datap->value);
+        }
+        //free(datap_temp);
+        //free(datap);
    
     } 
 
-    for(int i=0; i<=counter; i++){
+    /*for(int i=0; i<=counter; i++){
         pthread_join(thread_id[i], NULL);
-    }
+    }*/
+    
     pthread_mutex_destroy(&lock);
     close(fd);
     timer_delete(timerId);

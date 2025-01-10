@@ -1,7 +1,7 @@
 
 
-CC=$(CROSS_COMPILE)gcc
-CCFLAGS=-g -Wall -Wextra
+CC ?= $(CROSS_COMPILE)gcc
+CCFLAGS ?= -g -Wall -Werror
 
 
 .PHONY: all

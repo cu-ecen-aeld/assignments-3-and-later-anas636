@@ -10,7 +10,7 @@ all: aesdsocket
 aesdsocket: aesdsocket.o
 	$(CC) -o aesdsocket aesdsocket.o
 
-aesdsocket.o: aesdsocket.c
+aesdsocket.o: aesdsocket.c queue.h
 	$(CC) $(CCFLAGS) -o aesdsocket.o -c aesdsocket.c
 	
 .PHONY: clean

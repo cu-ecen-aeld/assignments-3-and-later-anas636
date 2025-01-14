@@ -8,7 +8,7 @@ CCFLAGS ?= -g -Wall -Werror
 all: aesdsocket
 
 aesdsocket: aesdsocket.o
-	$(CC) -o aesdsocket aesdsocket.o
+	$(CC) $(CCFLAGS) -o aesdsocket aesdsocket.o
 
 aesdsocket.o: aesdsocket.c queue.h
 	$(CC) $(CCFLAGS) -o aesdsocket.o -c aesdsocket.c

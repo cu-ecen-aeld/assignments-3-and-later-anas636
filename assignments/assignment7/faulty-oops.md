@@ -48,7 +48,7 @@ Code: d2800001 d2800000 d503233f d50323bf (b900003f)
 
 ## Analysis  
 From the kernel oops message we can conclude :  
-That the error is related to  NULL pointer dereference.  
-That the error had occured at the module faulty, 0x10 bytes into the function faulty_write which is 0x20 bytes long.  
+- That the error is related to  NULL pointer dereference.  
+- That the error had occured at the module faulty, 0x10 bytes into the function faulty_write which is 0x20 bytes long.  
 
 

@@ -1,4 +1,5 @@
 # Kernel oops  
+
 ## Resulting kernel oops message  
 After running 'echo “hello_world” > /dev/faulty' we get the following kernel oops :  
 > Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
@@ -43,7 +44,6 @@ Call trace:
  el0t_64_sync+0x18c/0x190
 Code: d2800001 d2800000 d503233f d50323bf (b900003f) 
 ---[ end trace 0000000000000000 ]---
-
 
 
 ## Analysis  

@@ -21,7 +21,7 @@
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
-MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
+MODULE_AUTHOR("anas"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
@@ -29,6 +29,11 @@ struct aesd_dev aesd_device;
 int aesd_open(struct inode *inode, struct file *filp)
 {
     PDEBUG("open");
+    
+    struct aesd_dev *dev; /* device information */
+    dev = container_of(inode->i_cdev, struct scull_dev, cdev);
+    filp->private_data = dev; /* for other methods */
+    
     /**
      * TODO: handle open
      */
@@ -105,6 +110,8 @@ int aesd_init_module(void)
     /**
      * TODO: initialize the AESD specific portion of the device
      */
+     
+    mutex_init(&aesd_devices.lock);
 
     result = aesd_setup_cdev(&aesd_device);
 

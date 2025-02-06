@@ -18,6 +18,9 @@
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
+
+#include <linux/slab.h>		/* kmalloc() */
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -68,6 +71,26 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     /**
      * TODO: handle write
      */
+     struct aesd_dev *dev = flip->private_data;
+     dev->add_entry.size = count;
+     dev->add_entry.buffptr = kmalloc(count * sizeof(char), GFP_KERNEL);
+     if (!dptr->data)
+         goto out;
+     memset(dev->add_entry.buffptr, 0, count * sizeof(char));
+     
+     if (copy_from_user(dev->add_entry.buffptr, buf, count)) {
+         retval = -EFAULT;
+	 goto out;
+     
+     aesd_circular_buffer_add_entry(&dev->buffer, &dev->add_entry);
+     
+     
+     
+     out:
+        mutex_unlock(&dev->lock);
+	return retval;
+     
+         
     return retval;
 }
 struct file_operations aesd_fops = {

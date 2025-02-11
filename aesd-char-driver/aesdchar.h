@@ -4,6 +4,9 @@
  *  Created on: Oct 23, 2019
  *      Author: Dan Walkes
  */
+ 
+#include "aesd-circular-buffer.h"
+#include <linux/mutex.h>
 
 #ifndef AESD_CHAR_DRIVER_AESDCHAR_H_
 #define AESD_CHAR_DRIVER_AESDCHAR_H_
@@ -32,6 +35,7 @@ struct aesd_dev
     struct mutex lock;
     struct aesd_circular_buffer buffer;
     struct aesd_buffer_entry add_entry;
+    size_t count_total;
     
 };
 

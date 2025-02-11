@@ -17,6 +17,7 @@
 #include <linux/types.h>
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
+#include <linux/string.h>
 #include "aesdchar.h"
 
 #include <linux/slab.h>		/* kmalloc() */
@@ -27,6 +28,10 @@ int aesd_minor =   0;
 MODULE_AUTHOR("anas"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
+/*struct aesd_dev aesd_device = { 
+    .count_total = 0,
+    .add_entry = { .buffptr = NULL, .size = 0 }
+};*/
 struct aesd_dev aesd_device;
 
 int aesd_open(struct inode *inode, struct file *filp)
@@ -34,7 +39,7 @@ int aesd_open(struct inode *inode, struct file *filp)
     PDEBUG("open");
     
     struct aesd_dev *dev; /* device information */
-    dev = container_of(inode->i_cdev, struct scull_dev, cdev);
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data = dev; /* for other methods */
     
     /**
@@ -60,38 +65,119 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     /**
      * TODO: handle read
      */
-    return retval;
+    PDEBUG("we are here__\n");
+    struct aesd_dev *dev = filp->private_data;
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+	
+    PDEBUG("we are here___\n");
+    size_t *entry_offset_byte_rtn;
+    PDEBUG("La valeur de fpos est : %lld \n", *f_pos);
+    struct aesd_buffer_entry *my_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, 1, entry_offset_byte_rtn );
+    PDEBUG("we are here_\n");
+    if (my_entry == NULL){
+        PDEBUG("we are here_1\n");
+        goto out;
+    }
+    
+    if ( *entry_offset_byte_rtn + count > my_entry->size)
+        count = my_entry->size - (*entry_offset_byte_rtn);
+    PDEBUG("we are here_2\n");
+    PDEBUG("string to read %s", (my_entry->buffptr)+ (*entry_offset_byte_rtn));
+    if (copy_to_user(buf, (my_entry->buffptr)+ (*entry_offset_byte_rtn), count)) {
+        PDEBUG("we are here_3\n");
+        retval = -EFAULT;
+	    goto out;
+    }
+ 
+  out:
+    PDEBUG("we are here_4\n");
+	mutex_unlock(&dev->lock);
+	return retval;   
+ 
 }
 
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    ssize_t retval = -ENOMEM;
+    ssize_t retval = 0;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
+	//size_t count_total;
     /**
      * TODO: handle write
      */
-     struct aesd_dev *dev = flip->private_data;
-     dev->add_entry.size = count;
-     dev->add_entry.buffptr = kmalloc(count * sizeof(char), GFP_KERNEL);
-     if (!dptr->data)
+    struct aesd_dev *dev = filp->private_data;
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+        
+    dev->count_total = dev->count_total + count;
+    dev->add_entry.size = dev->count_total;
+    
+    char *new_data = kmalloc(count+1, GFP_KERNEL);
+    if (!new_data){
+        retval = -ENOMEM;
+        goto out;
+    }
+    memset(new_data, 0, count);
+
+    PDEBUG("we are here");
+	 
+    if (copy_from_user(new_data, buf, count)) {
+        retval = -EFAULT;
+	    goto out;
+    }
+  
+    PDEBUG("we are here1\n");
+    char *old_data = dev->add_entry.buffptr;
+    char *all_data = kmalloc((dev->count_total)+1, GFP_KERNEL);
+    if (!all_data){
+        retval = -ENOMEM;
+        goto out;
+    }    
+    PDEBUG("we are here2\n");
+    if (old_data != NULL){
+        strcpy(all_data, old_data);   
+    }
+
+    PDEBUG("we are here3\n");
+    strcat(all_data, new_data);
+    PDEBUG("we are here4\n");
+    dev->add_entry.buffptr = all_data;
+    
+    if(*(buf+(count-1))=='\n'){
+        
+        aesd_circular_buffer_add_entry(&dev->buffer, &dev->add_entry);
+        dev->count_total = 0;
+        dev->add_entry.size = dev->count_total;
+        PDEBUG("the string writed is %s \n", dev->add_entry.buffptr);
+        dev->add_entry.buffptr = NULL;
+        PDEBUG("we are here5\n");
+    }
+    PDEBUG("we are here6\n");
+    kfree(new_data);
+    //kfree(all_data);
+     
+	 
+	 
+    /*if(*(buf+(count-1))!='\n')
+    dev->add_entry.size = count;
+    dev->add_entry.buffptr = kmalloc(count * sizeof(char), GFP_KERNEL);
+    if (!dptr->data)
          goto out;
-     memset(dev->add_entry.buffptr, 0, count * sizeof(char));
+    memset(dev->add_entry.buffptr, 0, count * sizeof(char));
      
-     if (copy_from_user(dev->add_entry.buffptr, buf, count)) {
-         retval = -EFAULT;
-	 goto out;
      
-     aesd_circular_buffer_add_entry(&dev->buffer, &dev->add_entry);
+    
+    aesd_circular_buffer_add_entry(&dev->buffer, &dev->add_entry);*/
      
      
      
-     out:
+    out:
         mutex_unlock(&dev->lock);
-	return retval;
+	    return retval;
      
          
-    return retval;
+    //return retval;
 }
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
@@ -129,12 +215,16 @@ int aesd_init_module(void)
         return result;
     }
     memset(&aesd_device,0,sizeof(struct aesd_dev));
+    aesd_device.count_total = 0;
+    aesd_device.add_entry.buffptr = NULL;
+    aesd_device.add_entry.size = 0;
 
     /**
      * TODO: initialize the AESD specific portion of the device
+     i nrrd to init aesd device hier
      */
      
-    mutex_init(&aesd_devices.lock);
+    mutex_init(&aesd_device.lock);
 
     result = aesd_setup_cdev(&aesd_device);
 

@@ -71,9 +71,9 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         return -ERESTARTSYS;
 	
     PDEBUG("we are here___\n");
-    size_t *entry_offset_byte_rtn;
+    size_t *entry_offset_byte_rtn = kmalloc(sizeof(size_t), GFP_KERNEL);
     PDEBUG("La valeur de fpos est : %lld \n", *f_pos);
-    struct aesd_buffer_entry *my_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, 1, entry_offset_byte_rtn );
+    struct aesd_buffer_entry *my_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, entry_offset_byte_rtn );
     PDEBUG("we are here_\n");
     if (my_entry == NULL){
         PDEBUG("we are here_1\n");
@@ -89,9 +89,11 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         retval = -EFAULT;
 	    goto out;
     }
- 
+    *f_pos += count;
+    retval = count;
   out:
     PDEBUG("we are here_4\n");
+    kfree(entry_offset_byte_rtn);
 	mutex_unlock(&dev->lock);
 	return retval;   
  
@@ -126,6 +128,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         retval = -EFAULT;
 	    goto out;
     }
+    retval = count;
   
     PDEBUG("we are here1\n");
     char *old_data = dev->add_entry.buffptr;
@@ -145,7 +148,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     dev->add_entry.buffptr = all_data;
     
     if(*(buf+(count-1))=='\n'){
-        
+        if (dev->buffer.full){
+            kfree(dev->buffer.entry[dev->buffer.in_offs].buffptr);
+        }
         aesd_circular_buffer_add_entry(&dev->buffer, &dev->add_entry);
         dev->count_total = 0;
         dev->add_entry.size = dev->count_total;

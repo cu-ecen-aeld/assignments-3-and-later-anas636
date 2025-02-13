@@ -16,13 +16,27 @@
 #include <time.h>
 #include "queue.h"
 
+#ifndef USE_AESD_CHAR_DEVICE
+    #define USE_AESD_CHAR_DEVICE 1
+#endif
+
+
 #define LISTEN_BACKLOG 50
 #define MAX_THREAD 50
 #define BUF_SIZE 512
 
 //Global Varibles
 bool caught_signal = false;
-char *filename = "/var/tmp/aesdsocketdata";
+//char *filename = "/var/tmp/aesdsocketdata";
+#if USE_AESD_CHAR_DEVICE
+    char *filename = "/dev/aesdchar";
+#else
+    char *filename = "/var/tmp/aesdsocketdata";
+#endif
+
+
+
+
 int it = 1;
 //pthread_t thread_id[MAX_THREAD];
 //int counter=0;
@@ -97,7 +111,7 @@ void timer_funct(union sigval timer_data)
     tmp = localtime(&t);
     size_t len = strftime(outstr, sizeof(outstr),"timestamp:%F %T \n",tmp);
     
-    const char *filename = "/var/tmp/aesdsocketdata";
+    //const char *filename = "/var/tmp/aesdsocketdata";
 
     pthread_mutex_lock(&lock);
     int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
@@ -105,14 +119,19 @@ void timer_funct(union sigval timer_data)
         pthread_exit((void *)1);	
     }
 
-    ssize_t n_wr = write(fd_f, outstr, len);
+    #ifndef USE_AESD_CHAR_DEVICE
+        ssize_t n_wr = write(fd_f, outstr, len);
+        if (n_wr < 0){
+            close(fd_f);
+            pthread_mutex_unlock(&lock);
+            pthread_exit((void *)1);	
+        }
+    
+    #endif
+
     close(fd_f);
     pthread_mutex_unlock(&lock);
-    if (n_wr < 0){
-        close(fd_f);
-        pthread_mutex_unlock(&lock);
-        pthread_exit((void *)1);	
-    }
+    
 
 }
 

@@ -131,8 +131,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     retval = count;
   
     PDEBUG("we are here1\n");
+    PDEBUG("the string to write is %s \n", buf);
     char *old_data = dev->add_entry.buffptr;
     char *all_data = kmalloc((dev->count_total)+1, GFP_KERNEL);
+    memset(all_data, 0, (dev->count_total)+1);
     if (!all_data){
         retval = -ENOMEM;
         goto out;

@@ -131,8 +131,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     retval = count;
   
     PDEBUG("we are here1\n");
-    PDEBUG("the string to write is %s \n", buf);
+    PDEBUG("the string to write is (buf) %s \n", buf);
     char *old_data = dev->add_entry.buffptr;
+    PDEBUG("the string to write is (old_data) %s \n", old_data);
     char *all_data = kmalloc((dev->count_total)+1, GFP_KERNEL);
     memset(all_data, 0, (dev->count_total)+1);
     if (!all_data){
@@ -141,11 +142,14 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }    
     PDEBUG("we are here2\n");
     if (old_data != NULL){
-        strcpy(all_data, old_data);   
+        strcpy(all_data, old_data);
+        PDEBUG("the string to write is (after strcpy) %s \n", all_data);   
     }
 
     PDEBUG("we are here3\n");
     strcat(all_data, new_data);
+    PDEBUG("the string to write is (after strcat) %s \n", all_data);
+
     PDEBUG("we are here4\n");
     dev->add_entry.buffptr = all_data;
     

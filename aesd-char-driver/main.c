@@ -120,7 +120,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         retval = -ENOMEM;
         goto out;
     }
-    memset(new_data, 0, count);
+    memset(new_data, 0, count+1);
 
     PDEBUG("we are here");
 	 

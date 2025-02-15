@@ -65,27 +65,27 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     /**
      * TODO: handle read
      */
-    PDEBUG("we are here__\n");
+    //PDEBUG("we are here__\n");
     struct aesd_dev *dev = filp->private_data;
     if (mutex_lock_interruptible(&dev->lock))
         return -ERESTARTSYS;
 	
-    PDEBUG("we are here___\n");
+    //PDEBUG("we are here___\n");
     size_t *entry_offset_byte_rtn = kmalloc(sizeof(size_t), GFP_KERNEL);
-    PDEBUG("La valeur de fpos est : %lld \n", *f_pos);
+    //PDEBUG("La valeur de fpos est : %lld \n", *f_pos);
     struct aesd_buffer_entry *my_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, entry_offset_byte_rtn );
-    PDEBUG("we are here_\n");
+    //PDEBUG("we are here_\n");
     if (my_entry == NULL){
-        PDEBUG("we are here_1\n");
+        //PDEBUG("we are here_1\n");
         goto out;
     }
     
     if ( *entry_offset_byte_rtn + count > my_entry->size)
         count = my_entry->size - (*entry_offset_byte_rtn);
-    PDEBUG("we are here_2\n");
-    PDEBUG("string to read %s", (my_entry->buffptr)+ (*entry_offset_byte_rtn));
+    //PDEBUG("we are here_2\n");
+    //PDEBUG("string to read %s", (my_entry->buffptr)+ (*entry_offset_byte_rtn));
     if (copy_to_user(buf, (my_entry->buffptr)+ (*entry_offset_byte_rtn), count)) {
-        PDEBUG("we are here_3\n");
+        //PDEBUG("we are here_3\n");
         retval = -EFAULT;
 	    goto out;
     }
@@ -122,7 +122,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
     memset(new_data, 0, count+1);
 
-    PDEBUG("we are here");
+    //PDEBUG("we are here");
 	 
     if (copy_from_user(new_data, buf, count)) {
         retval = -EFAULT;
@@ -130,27 +130,27 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
     retval = count;
   
-    PDEBUG("we are here1\n");
-    PDEBUG("the string to write is (buf) %s \n", buf);
+    //PDEBUG("we are here1\n");
+    //PDEBUG("the string to write is (buf) %s \n", buf);
     char *old_data = dev->add_entry.buffptr;
-    PDEBUG("the string to write is (old_data) %s \n", old_data);
+    //PDEBUG("the string to write is (old_data) %s \n", old_data);
     char *all_data = kmalloc((dev->count_total)+1, GFP_KERNEL);
     memset(all_data, 0, (dev->count_total)+1);
     if (!all_data){
         retval = -ENOMEM;
         goto out;
     }    
-    PDEBUG("we are here2\n");
+    //PDEBUG("we are here2\n");
     if (old_data != NULL){
         strcpy(all_data, old_data);
-        PDEBUG("the string to write is (after strcpy) %s \n", all_data);   
+        //PDEBUG("the string to write is (after strcpy) %s \n", all_data);   
     }
 
-    PDEBUG("we are here3\n");
+    //PDEBUG("we are here3\n");
     strcat(all_data, new_data);
-    PDEBUG("the string to write is (after strcat) %s \n", all_data);
+    //PDEBUG("the string to write is (after strcat) %s \n", all_data);
 
-    PDEBUG("we are here4\n");
+    //PDEBUG("we are here4\n");
     dev->add_entry.buffptr = all_data;
     
     if(*(buf+(count-1))=='\n'){
@@ -160,29 +160,15 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         aesd_circular_buffer_add_entry(&dev->buffer, &dev->add_entry);
         dev->count_total = 0;
         dev->add_entry.size = dev->count_total;
-        PDEBUG("the string writed is %s \n", dev->add_entry.buffptr);
+        //PDEBUG("the string writed is %s \n", dev->add_entry.buffptr);
         dev->add_entry.buffptr = NULL;
-        PDEBUG("we are here5\n");
+        //PDEBUG("we are here5\n");
     }
-    PDEBUG("we are here6\n");
+    //PDEBUG("we are here6\n");
     kfree(new_data);
     //kfree(all_data);
-     
-	 
-	 
-    /*if(*(buf+(count-1))!='\n')
-    dev->add_entry.size = count;
-    dev->add_entry.buffptr = kmalloc(count * sizeof(char), GFP_KERNEL);
-    if (!dptr->data)
-         goto out;
-    memset(dev->add_entry.buffptr, 0, count * sizeof(char));
-     
-     
     
-    aesd_circular_buffer_add_entry(&dev->buffer, &dev->add_entry);*/
-     
-     
-     
+      
     out:
         mutex_unlock(&dev->lock);
 	    return retval;

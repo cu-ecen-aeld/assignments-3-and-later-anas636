@@ -22,6 +22,8 @@
 
 #include <linux/slab.h>		/* kmalloc() */
 
+#include "aesd_ioctl.h"
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -176,13 +178,80 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
          
     //return retval;
 }
+
+
+long aesd_unlocked_ioctl (struct file *filp, unsigned int cmd, unsigned long arg){
+
+    
+    long retval = 0;
+    struct aesd_dev *dev = filp->private_data;
+    
+
+
+    switch(cmd) {
+    case AESDCHAR_IOCSEEKTO:
+    struct aesd_seekto seekto;
+        if( copy_from_user(&seekto, (const void __user *) arg,
+                           sizeof(seekto)) )
+            return -EFAULT;
+
+        retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+
+        break;
+    default:
+        return -ENOTTY;
+    }
+
+
+}
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .unlocked_ioctl = aesd_unlocked_ioctl,
 };
+
+
+static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset){
+
+    
+    long retval = 0;
+    struct aesd_dev *dev = filp->private_data;
+    loff_t file_offset = 0;
+    if (write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
+        return -EINVAL;
+    else if (write_cmd_offset > (dev->buffer.entry[write_cmd].size-1))
+        return -EINVAL;
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+
+
+    unsigned int out_off_ = dev->buffer.out_offs;
+    while (out_off_ != write_cmd){
+
+        file_offset = (dev->buffer.entry[out_off_].size -1) + file_offset;
+        out_off_++; 
+        if (out_off_ >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED){
+            if (buffer->full){
+                out_off_ = 0;
+            }
+            else {
+                break;
+            }
+        }
+        }
+    }
+
+    file_offset = file_offset + write_cmd_offset;
+
+    out:
+        mutex_unlock(&dev->lock);
+	    return retval;
+}
+
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
 {

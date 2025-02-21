@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <time.h>
 #include "queue.h"
+#include "aesd_ioctl.h"
 
 #ifndef USE_AESD_CHAR_DEVICE
     #define USE_AESD_CHAR_DEVICE 1

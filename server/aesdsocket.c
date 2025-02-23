@@ -160,33 +160,68 @@ void* thread_function(void* arguments)
     memset(buf, 0, BUF_SIZE); //clear the variable
     ssize_t nread;
     ssize_t byread;
+    char *word = "AESDCHAR_IOCSEEKTO:";
+    struct aesd_seekto seekto;
 
 
     //printf("Connection done with client IP address: %s number: %d \n", thread_func_args->ip, it);
     it++;
 
+    int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
+
+    if (fd_f<0){
+            //pthread_mutex_unlock(&lock);
+            //thread_funct_cleanUp(thread_func_args);
+        thread_func_args->thread_flag = 1;
+        pthread_exit((void *)1);	
+        }
+
+
+
     while((nread = recv(thread_func_args->clientsocket, buf, BUF_SIZE, 0))>0){
 
-        pthread_mutex_lock(&lock);
-        int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
+        
+        //int fd_f = open(filename, O_APPEND | O_CREAT | O_RDWR, 0644);
         //printf("\n rcv: %s \n", buf);
 
-        if (fd_f<0){
+        /*if (fd_f<0){
             pthread_mutex_unlock(&lock);
             //thread_funct_cleanUp(thread_func_args);
             thread_func_args->thread_flag = 1;
             pthread_exit((void *)1);	
+        }*/
+
+        
+        if(strstr(buf, word) == NULL){
+            pthread_mutex_lock(&lock);
+            ssize_t n_wr = write(fd_f, buf, nread);
+            pthread_mutex_unlock(&lock);
+            if (n_wr != nread){
+            //thread_funct_cleanUp(thread_func_args);
+                thread_func_args->thread_flag = 1;
+                close(fd_f);
+                //pthread_mutex_unlock(&lock);
+                pthread_exit((void *)1);	
+            }
+
         }
 
-        ssize_t n_wr = write(fd_f, buf, nread);
-        close(fd_f);
-        pthread_mutex_unlock(&lock);
-        
-        if (n_wr != nread){
-            //thread_funct_cleanUp(thread_func_args);
-            thread_func_args->thread_flag = 1;
-            pthread_exit((void *)1);	
+        else {
+
+            int params = sscanf(buf,"AESDCHAR_IOCSEEKTO:%u,%u", &seekto.write_cmd, &seekto.write_cmd_offset);
+            if(params == 2){
+                if (ioctl(fd_f, AESDCHAR_IOCSEEKTO, &seekto) == -1) {
+                    perror("ioctl");
+                    thread_func_args->thread_flag = 1;
+                    close(fd_f);
+                    //pthread_mutex_unlock(&lock);
+                    pthread_exit((void *)1);
+                 }
+            }
         }
+
+        //close(fd_f);
+        //pthread_mutex_unlock(&lock);
 
         if(buf[nread-1]=='\n')
         {
@@ -205,23 +240,23 @@ void* thread_function(void* arguments)
 
     //send to client
     
-    int fd_f1 = open(filename, O_RDONLY);
+    /*int fd_f1 = open(filename, O_RDONLY);
 
     if (fd_f1<1){
             //thread_funct_cleanUp(thread_func_args);
             thread_func_args->thread_flag = 1;
             pthread_exit((void *)1);	
         }
+    */
 
-
-    while((byread = read(fd_f1, buf, BUF_SIZE))>0){
+    while((byread = read(fd_f, buf, BUF_SIZE))>0){
 
         //printf("\n sendinf: %s \n", buf);
 
         ssize_t bysent = send(thread_func_args->clientsocket, buf, byread, 0);
 
         if (bysent != byread){
-            close(fd_f1);
+            close(fd_f);
             //thread_funct_cleanUp(thread_func_args);
             thread_func_args->thread_flag = 1;
             pthread_exit((void *)1);	
@@ -231,7 +266,7 @@ void* thread_function(void* arguments)
         memset(buf, 0, BUF_SIZE); //clear the variable
     }
 
-    close(fd_f1);
+    close(fd_f);
     syslog(LOG_DEBUG,"Closed connection from %s \n", thread_func_args->ip);
     thread_func_args->thread_flag = 1;
     //thread_funct_cleanUp(thread_func_args);

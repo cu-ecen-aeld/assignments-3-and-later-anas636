@@ -36,6 +36,50 @@ MODULE_LICENSE("Dual BSD/GPL");
 };*/
 struct aesd_dev aesd_device;
 
+
+
+
+static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset){
+    
+    long retval = 0;
+    struct aesd_dev *dev = filp->private_data;
+    loff_t file_offset = 0;
+    if (write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
+        return -EINVAL;
+    else if (write_cmd_offset > (dev->buffer.entry[write_cmd].size-1))
+        return -EINVAL;
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+
+    unsigned int out_off_ = dev->buffer.out_offs;
+    while (out_off_ != write_cmd){
+        
+        //printk("la valeur de out_off_ is : %u\n", out_off_);
+
+        file_offset = (dev->buffer.entry[out_off_].size) + file_offset;
+
+        //printk("la valeur de file_offset : %lld\n", file_offset);
+        out_off_++; 
+        if (out_off_ >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED){
+            if (dev->buffer.full){
+                out_off_ = 0;
+            }
+            else {
+                break;
+            }
+        }
+        }
+    
+
+    file_offset = file_offset + write_cmd_offset;
+    filp->f_pos = file_offset;
+    printk("la valeur de file_offset : %lld\n", file_offset);
+
+    out:
+        mutex_unlock(&dev->lock);
+	    return retval;
+}
+
 int aesd_open(struct inode *inode, struct file *filp)
 {
     PDEBUG("open");
@@ -94,7 +138,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     *f_pos += count;
     retval = count;
   out:
-    PDEBUG("we are here_4\n");
+    //PDEBUG("we are here_4\n");
     kfree(entry_offset_byte_rtn);
 	mutex_unlock(&dev->lock);
 	return retval;   
@@ -169,7 +213,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     //PDEBUG("we are here6\n");
     kfree(new_data);
     //kfree(all_data);
-    
+    //*f_pos += count;
       
     out:
         mutex_unlock(&dev->lock);
@@ -181,29 +225,54 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
 
 long aesd_unlocked_ioctl (struct file *filp, unsigned int cmd, unsigned long arg){
-
     
     long retval = 0;
+    PDEBUG("ioctl");
     struct aesd_dev *dev = filp->private_data;
-    
-
+    struct aesd_seekto seekto;
 
     switch(cmd) {
     case AESDCHAR_IOCSEEKTO:
-    struct aesd_seekto seekto;
-        if( copy_from_user(&seekto, (const void __user *) arg,
-                           sizeof(seekto)) )
-            return -EFAULT;
-
+        if( copy_from_user(&seekto, (const void __user *) arg, sizeof(seekto))){
+            retval = -EFAULT;
+            goto out;
+        }
         retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
-
         break;
     default:
-        return -ENOTTY;
+        retval = -ENOTTY;
+        goto out;
     }
 
+    out:
+	    return retval;
 
 }
+
+loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+    PDEBUG("llseek");
+    struct aesd_dev *dev = filp->private_data;
+    loff_t retval;
+    loff_t size_buf=0;
+    for(int i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++){
+        size_buf = (dev->buffer.entry[i].size) + size_buf;
+    }
+    if (size_buf > 0)
+        size_buf = size_buf - 1;
+    printk("la valeur de size total dans llseek : %lld\n", size_buf);
+
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+
+    retval = fixed_size_llseek(filp, offset, whence, size_buf);
+
+    out:
+        mutex_unlock(&dev->lock);
+	    return retval;
+
+}
+
 
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
@@ -212,45 +281,10 @@ struct file_operations aesd_fops = {
     .open =     aesd_open,
     .release =  aesd_release,
     .unlocked_ioctl = aesd_unlocked_ioctl,
+    .llseek = aesd_llseek,
 };
 
 
-static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset){
-
-    
-    long retval = 0;
-    struct aesd_dev *dev = filp->private_data;
-    loff_t file_offset = 0;
-    if (write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
-        return -EINVAL;
-    else if (write_cmd_offset > (dev->buffer.entry[write_cmd].size-1))
-        return -EINVAL;
-    if (mutex_lock_interruptible(&dev->lock))
-        return -ERESTARTSYS;
-
-
-    unsigned int out_off_ = dev->buffer.out_offs;
-    while (out_off_ != write_cmd){
-
-        file_offset = (dev->buffer.entry[out_off_].size -1) + file_offset;
-        out_off_++; 
-        if (out_off_ >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED){
-            if (buffer->full){
-                out_off_ = 0;
-            }
-            else {
-                break;
-            }
-        }
-        }
-    }
-
-    file_offset = file_offset + write_cmd_offset;
-
-    out:
-        mutex_unlock(&dev->lock);
-	    return retval;
-}
 
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
